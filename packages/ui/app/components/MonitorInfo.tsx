@@ -114,6 +114,14 @@ export function MonitorInfo({
               <Text>Wi-Fi BSSID: {monitor.wifiBssid || 'No Data'}</Text>
               <Text>Camera Stream URL: {monitor.camera ?? 'No Camera'}</Text>
               <Text>Desktop Stream URL: {monitor.desktop ?? 'No Desktop'}</Text>
+              {monitor.warnings && monitor.warnings.length > 0 && (
+                <>
+                  <Text c="red" fw={700} mt="md">Warnings:</Text>
+                  {monitor.warnings.map((w, i) => (
+                    <Text key={i} c="red" size="sm">{w}</Text>
+                  ))}
+                </>
+              )}
             </Grid.Col>
             <Grid.Col span={6}>
               <LoadingOverlay visible={updating} zIndex={1000} overlayProps={{ radius: 'sm', blur: 2 }} />

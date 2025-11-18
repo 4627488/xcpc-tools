@@ -15,6 +15,7 @@ class MonitorAdminHandler extends AuthHandler {
         const monitorDict = {};
         const groups = {};
         groups['#ErrMachine'] = [];
+        groups['#WarnMachine'] = [];
         for (const monitor of monitors) {
             monitorDict[monitor.name || monitor._id] = monitor;
             if (!nogroup && monitor.group) {
@@ -23,6 +24,9 @@ class MonitorAdminHandler extends AuthHandler {
             }
             if (monitor.updateAt < new Date().getTime() - 120 * 1000) {
                 groups['#ErrMachine'].push(monitor.name || monitor._id);
+            }
+            if (monitor.warnings && monitor.warnings.length > 0) {
+                groups['#WarnMachine'].push(monitor.name || monitor._id);
             }
         }
         this.response.body = { monitors: monitorDict };
@@ -110,6 +114,12 @@ async function saveMonitorInfo(ctx: Context, monitor: any, config) {
     const monitors = await ctx.db.monitor.find({ mac });
     const warn = monitors.length > 1 || (monitors.length && monitors[0].ip !== ip);
     if (warn) ctx.logger('monitor').warn(`Duplicate monitor ${mac} from (${ip}, ${monitors.length ? monitors[0].ip : 'null'})`);
+    let warnings = monitors.length ? (monitors[0].warnings || []) : [];
+    if (monitors.length && monitors[0].hostname && monitors[0].hostname !== seats) {
+        const msg = `Hostname changed from "${monitors[0].hostname}" to "${seats}" at ${new Date().toISOString()}`;
+        ctx.logger('monitor').warn(msg);
+        warnings = [...warnings, msg];
+    }
     const hasWifiSignal = wifi_signal !== undefined && wifi_signal !== '';
     const wifiSignalValue = hasWifiSignal ? Number.parseFloat(String(wifi_signal)) : Number.NaN;
     const normalizedBssid = typeof wifi_bssid === 'string' ? wifi_bssid.trim() : '';
@@ -126,6 +136,7 @@ async function saveMonitorInfo(ctx: Context, monitor: any, config) {
         hostname: seats,
         oldMonitor: true,
         updateAt: new Date().getTime(),
+        warnings,
         ...os && { os },
         ...kernel && { kernel },
         ...cpu && { cpu: cpu.replaceAll('_', ' ') },

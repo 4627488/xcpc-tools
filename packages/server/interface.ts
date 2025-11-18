@@ -48,6 +48,7 @@ export interface MonitorDoc {
     desktop?: string;
     wifiSignal?: number;
     wifiBssid?: string;
+    warnings?: string[];
 }
 
 export interface CommandTask {

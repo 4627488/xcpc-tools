@@ -85,9 +85,9 @@ const hashToColor = (value: string): string => {
   for (let i = 0; i < value.length; i += 1) {
     hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
   }
-  const hue = hash % 360;
-  const saturation = 55 + (hash % 30);
-  const lightness = 45 + (hash % 20) / 2;
+  const hue = (hash * 137.508) % 360;
+  const saturation = 60 + (hash % 25);
+  const lightness = 40 + (hash % 20);
   return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
 };
 
@@ -423,6 +423,16 @@ export function ArenaView({ monitors, isLoading, openMonitorInfo }: ArenaViewPro
 
   const unmatchedMonitors = overflow;
 
+  const uniqueBssids = React.useMemo(() => {
+    const bssids = new Set<string>();
+    monitors.forEach((m) => {
+      if (m.wifiBssid) {
+        bssids.add(m.wifiBssid);
+      }
+    });
+    return Array.from(bssids).sort();
+  }, [monitors]);
+
   const getSeatStatusColor = (seatId: string): { color: string; monitor: MonitorRecord | null; monitors: MonitorRecord[] } => {
     const monitorsForSeat = seatMap.get(normalizeSeatId(seatId)) ?? [];
     const monitor = pickPrimaryMonitor(monitorsForSeat);
@@ -570,7 +580,27 @@ export function ArenaView({ monitors, isLoading, openMonitorInfo }: ArenaViewPro
       );
     }
     if (viewMode === 'bssid') {
-      return <Text size="sm">Same color indicates the same BSSID. Offline hosts appear gray.</Text>;
+      if (uniqueBssids.length === 0) {
+        return <Text size="sm" c="dimmed">No BSSID data available</Text>;
+      }
+      return (
+        <Group gap="sm" wrap="wrap" style={{ maxWidth: 600 }}>
+          {uniqueBssids.map((bssid) => (
+            <Group key={bssid} gap={6}>
+              <Box style={{
+                width: 16, height: 16, backgroundColor: hashToColor(bssid), borderRadius: 3,
+              }} />
+              <Text size="sm" style={{ fontFamily: monospaceFont }}>{bssid}</Text>
+            </Group>
+          ))}
+          <Group gap={6}>
+            <Box style={{
+              width: 16, height: 16, backgroundColor: theme.colors.blue[3], borderRadius: 3,
+            }} />
+            <Text size="sm">Unknown</Text>
+          </Group>
+        </Group>
+      );
     }
     return (
       <Group gap="xs" align="center">
