@@ -220,15 +220,14 @@ class HydroFetcher extends BasicFetcher {
         if (!body?.bdocs?.length) return;
         const baloons = body.bdocs.map((b) => ({ ...b, time: mongoId(b._id).timestamp * 1000 })).sort((a, b) => a.time - b.time);
         for (const balloon of baloons) {
-            balloon.time = mongoId(balloon._id).timestamp * 1000;
             const teamTotal = await this.ctx.db.balloon.find({ teamid: balloon.uid, time: { $lt: balloon.time } });
             const encourage = teamTotal.length < (config.freezeEncourage ?? 0);
             const totalDict = {};
             for (const t of teamTotal) {
                 totalDict[t.problem] = t.contestproblem;
             }
-            const shouldPrint = this.contest.info.freeze_time ? (balloon.time * 1000) < this.contest.info.freeze_time || encourage : true;
-            if (!shouldPrint && !balloon.sent) await this.setBalloonDone(balloon.balloonid);
+            const shouldPrint = this.contest.info.freeze_time ? balloon.time < new Date(this.contest.info.freeze_time).getTime() || encourage : true;
+            if (!shouldPrint && !balloon.sent) await this.setBalloonDone(balloon._id);
             const contestproblem = {
                 id: balloon.pid.toString(),
                 short_name: String.fromCharCode(this.contest.info.pids.indexOf(balloon.pid) + 65),
