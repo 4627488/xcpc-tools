@@ -235,16 +235,17 @@ class HydroFetcher extends BasicFetcher {
                 rgb: this.contest.info.balloon[balloon.pid].color,
                 color: this.contest.info.balloon[balloon.pid].name,
             };
+            const udoc = body.udict[balloon.uid];
             await this.ctx.db.balloon.update({ balloonid: balloon._id }, {
                 $set: {
                     balloonid: balloon._id,
                     time: balloon.time,
                     problem: contestproblem.short_name,
                     contestproblem,
-                    team: body.udict[balloon.uid].displayName,
+                    team: udoc.displayName || udoc.uname,
                     teamid: balloon.uid,
-                    location: body.udict[balloon.uid].uname,
-                    affiliation: body.udict[balloon.uid].school,
+                    location: udoc.seat || udoc.studentId,
+                    affiliation: udoc.school,
                     awards: balloon.first ? 'First of Problem' : (
                         this.contest.info.freeze_time && (balloon.time * 1000) > this.contest.info.freeze_time
                             && encourage ? 'Encourage Balloon' : ''
@@ -278,7 +279,7 @@ class HydroFetcher extends BasicFetcher {
                 id: task._id,
                 tid: task.owner,
                 team: `${udoc.school ? `${udoc.school}: ` : ''}${udoc.displayName || udoc.uname}`,
-                location: udoc.studentId,
+                location: udoc.seat || udoc.studentId,
                 filename: task.title,
                 lang: task.title.split('.').pop() || 'txt',
                 createdAt: new Date(parseInt(task._id.substring(0, 8), 16) * 1000).getTime(),
