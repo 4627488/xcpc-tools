@@ -10,6 +10,7 @@ import Dashboard from './pages/Dashboard';
 import Logs from './pages/Logs';
 import Monitor from './pages/Monitor';
 import Print from './pages/Print';
+import ArenaEditor from './pages/ArenaEditor';
 import Resolver from './Resolver';
 
 function DefaultLayout() {
@@ -41,6 +42,7 @@ export default function App() {
           <Route path="/balloon" element={<Balloon />} />
           <Route path="/monitor" element={<Monitor />} />
           <Route path="/commands" element={<Commands />} />
+          <Route path="/arena-editor" element={<ArenaEditor />} />
         </Route>
         <Route path="/resolver" element={<Resolver />} />
       </Routes>

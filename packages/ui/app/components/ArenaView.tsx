@@ -21,6 +21,8 @@ import {
 import { notifications } from '@mantine/notifications';
 import {
   IconAlertTriangle,
+  IconArrowsMaximize,
+  IconArrowsMinimize,
   IconInfoCircle,
   IconRouter,
   IconTrash,
@@ -32,6 +34,7 @@ import {
 } from '@tabler/icons-react';
 import React from 'react';
 import type { ArenaLayoutDocument, ArenaLayoutSectionDocument } from '../arena/types';
+import { ArenaSectionRenderer } from './ArenaSectionRenderer';
 
 interface MonitorRecord {
   _id: string;
@@ -276,6 +279,8 @@ export function ArenaView({ monitors, isLoading, openMonitorInfo }: ArenaViewPro
   });
   const [zoom, setZoom] = React.useState(0.40);
   const [layouts, setLayouts] = React.useState<ArenaLayoutDocument[]>(() => loadLayoutsFromStorage());
+  const viewContainerRef = React.useRef<HTMLDivElement>(null);
+  const [isFullscreen, setIsFullscreen] = React.useState(false);
 
   React.useEffect(() => {
     if (!isBrowser) return;
@@ -314,6 +319,42 @@ export function ArenaView({ monitors, isLoading, openMonitorInfo }: ArenaViewPro
 
   const resetZoom = React.useCallback(() => {
     setZoom(1);
+  }, []);
+
+  const handleFullscreenChange = React.useCallback(() => {
+    if (!isBrowser) return;
+    setIsFullscreen(document.fullscreenElement === viewContainerRef.current);
+  }, []);
+
+  React.useEffect(() => {
+    if (!isBrowser) return undefined;
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    };
+  }, [handleFullscreenChange]);
+
+  const toggleFullscreen = React.useCallback(async () => {
+    if (!isBrowser) return;
+    const element = viewContainerRef.current;
+    if (!element) return;
+    try {
+      if (document.fullscreenElement === element) {
+        await document.exitFullscreen?.();
+        return;
+      }
+      if (document.fullscreenElement && document.fullscreenElement !== element) {
+        await document.exitFullscreen?.();
+      }
+      await element.requestFullscreen?.();
+    } catch (error) {
+      console.error('Failed to toggle fullscreen', error);
+      notifications.show({
+        title: 'Fullscreen error',
+        message: 'Unable to toggle fullscreen in this browser.',
+        color: 'red',
+      });
+    }
   }, []);
 
   const layout = React.useMemo(
@@ -642,151 +683,230 @@ export function ArenaView({ monitors, isLoading, openMonitorInfo }: ArenaViewPro
       );
     }
 
+    const hasPositioning = layout.sections.some((s) => typeof (s.meta as any)?.x === 'number' && typeof (s.meta as any)?.y === 'number');
+
+    const getSeatProps = (seatId: string) => {
+      const { color, monitor, monitors: monitorsForSeat } = getSeatStatusColor(seatId);
+      const duplicatesCount = monitorsForSeat.length > 1 ? monitorsForSeat.length : null;
+      
+      const tooltipContent = (
+        <Stack gap={4}>
+          <Text fw={600} size="sm">
+            {seatId}
+          </Text>
+          {monitor ? (
+            <>
+              <Text size="sm">Machine: {monitor.name ?? monitor.hostname ?? 'Unnamed'}</Text>
+              <Text size="sm">IP: {monitor.ip ?? 'Unknown'}</Text>
+              <Text size="sm">MAC: {formatMac(monitor.mac)}</Text>
+              <Text size="sm">Online: {monitor.updateAt && monitor.updateAt > Date.now() - ONLINE_THRESHOLD_MS ? 'Yes' : 'No'}</Text>
+              <Text size="sm">Uptime: {formatUptime(monitor.uptime)}</Text>
+              <Text size="sm">Version: {monitor.version ?? 'Unknown'}</Text>
+              <Group gap={6}>
+                <ThemeIcon size="sm" color="blue" variant="light"><IconWifi size={14} /></ThemeIcon>
+                <Text size="sm">{formatWifiSignalLabel(monitor.wifiSignal)}</Text>
+              </Group>
+              <Group gap={6}>
+                <ThemeIcon size="sm" color="grape" variant="light"><IconRouter size={14} /></ThemeIcon>
+                <Text size="sm">{monitor.wifiBssid ?? 'None'}</Text>
+              </Group>
+              {monitorsForSeat.length > 1 && (
+                <Text size="sm" c="orange">
+                  Duplicate Reports: {monitorsForSeat.map((item) => item.name ?? item._id).join(', ')}
+                </Text>
+              )}
+            </>
+          ) : (
+            <Text size="sm">No monitor data</Text>
+          )}
+        </Stack>
+      );
+
+      const badgeOffset = Math.max(4, 4 * zoom);
+      const content = duplicatesCount ? (
+        <Badge
+          size="xs"
+          color="yellow"
+          variant="filled"
+          style={{ position: 'absolute', top: badgeOffset, right: badgeOffset }}
+        >
+          x{duplicatesCount}
+        </Badge>
+      ) : null;
+
+      return {
+        color,
+        tooltip: tooltipContent,
+        content,
+        onClick: () => {
+          if (monitor) {
+            openMonitorInfo(monitor, 'info');
+          }
+        },
+        cursor: monitor ? 'pointer' : 'default',
+      };
+    };
+
+    if (hasPositioning) {
+      return (
+        <Box style={{ position: 'relative', minHeight: 2000, minWidth: 2000 }}>
+          {layout.sections.map((section) => {
+            const meta = section.meta as any;
+            const rotation = meta?.rotation ?? 0;
+
+            return (
+              <Box
+                key={section.id}
+                style={{
+                  position: 'absolute',
+                  left: (meta?.x ?? 0) * zoom,
+                  top: (meta?.y ?? 0) * zoom,
+                  transform: `rotate(${rotation}deg)`,
+                  transformOrigin: 'center center',
+                }}
+              >
+                {section.title && (
+                  <Title order={5} style={{ marginBottom: 8 * zoom, textAlign: 'center' }}>
+                    {section.title}
+                  </Title>
+                )}
+                <ArenaSectionRenderer
+                  section={section}
+                  zoom={zoom}
+                  getSeatProps={getSeatProps}
+                />
+              </Box>
+            );
+          })}
+        </Box>
+      );
+    }
+
     return (
       <>
-        {layout.sections.map((section) => {
-          const gapSize = (section.gapSize ?? 8) * zoom;
-          const seatHeight = (section.seatSize ?? 36) * zoom;
-          const seatWidth = seatHeight * SEAT_ASPECT_RATIO;
-          return (
-            <Stack key={section.id} gap="xs">
-              {section.title && <Title order={5}>{section.title}</Title>}
-              <Stack gap={gapSize}>
-                {section.grid.map((row, rowIndex) => {
-                  const label = section.rowLabels?.[rowIndex] ?? null;
-                  return (
-                    <Group key={`${section.id}-row-${rowIndex}`} gap={gapSize} wrap="nowrap" align="center">
-                      {label ? (
-                        <Box
-                          style={{
-                            width: seatWidth,
-                            minWidth: seatWidth,
-                            height: seatHeight,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'flex-end',
-                            paddingRight: Math.max(2, 4 * zoom),
-                            color: theme.colors.gray[7],
-                            fontSize: theme.fontSizes.sm,
-                            flex: '0 0 auto',
-                            fontFamily: monospaceFont,
-                          }}
-                        >
-                          {label}
-                        </Box>
-                      ) : null}
-                      {row.map((value, cellIndex) => {
-                        if (!value) {
-                          return (
-                            <Box
-                              key={`${section.id}-${rowIndex}-${cellIndex}-gap`}
-                              style={{ width: seatWidth, height: seatHeight, flex: '0 0 auto' }}
-                            />
-                          );
-                        }
-                        return renderSeatCard(value, section, rowIndex, cellIndex, seatWidth, seatHeight);
-                      })}
-                    </Group>
-                  );
-                })}
-              </Stack>
-            </Stack>
-          );
-        })}
+        {layout.sections.map((section) => (
+          <Stack key={section.id} gap="xs">
+            {section.title && <Title order={5}>{section.title}</Title>}
+            <ArenaSectionRenderer
+              section={section}
+              zoom={zoom}
+              getSeatProps={getSeatProps}
+            />
+          </Stack>
+        ))}
       </>
     );
   };
 
   return (
-    <Card padding="md" withBorder radius="md" pos="relative">
+    <Card padding="md" withBorder radius="md" pos="relative" ref={viewContainerRef}>
+      {isFullscreen && (
+        <ActionIcon
+          variant="light"
+          aria-label="Exit fullscreen"
+          onClick={toggleFullscreen}
+          style={{ position: 'absolute', top: 16, right: 16, zIndex: 200 }}
+        >
+          <IconArrowsMinimize size={18} />
+        </ActionIcon>
+      )}
       <LoadingOverlay
         visible={Boolean(isLoading)}
         zIndex={100}
         overlayProps={{ radius: 'sm', blur: 2 }}
       />
       <Stack gap="md">
-        <Group justify="space-between" align="center">
-          <Group gap="sm">
-            <Select
-              label="Layout"
-              placeholder="Import an arena layout JSON"
-              value={selectedLayoutId}
-              onChange={(value) => setSelectedLayoutId(value)}
-              data={layouts.map((item) => ({ value: item.id, label: item.name }))}
-              disabled={!layouts.length}
-              style={{ width: 220 }}
-            />
-            <SegmentedControl
-              value={viewMode}
-              onChange={(value: string) => setViewMode(value as ArenaViewMode)}
-              data={viewModeOptions}
-            />
-            <Group gap={6} align="center">
-              <Text size="sm">Zoom</Text>
-              <Group gap={4} align="center">
+        {!isFullscreen && (
+          <Group justify="space-between" align="center">
+            <Group gap="sm">
+              <Select
+                label="Layout"
+                placeholder="Import an arena layout JSON"
+                value={selectedLayoutId}
+                onChange={(value) => setSelectedLayoutId(value)}
+                data={layouts.map((item) => ({ value: item.id, label: item.name }))}
+                disabled={!layouts.length}
+                style={{ width: 220 }}
+              />
+              <SegmentedControl
+                value={viewMode}
+                onChange={(value: string) => setViewMode(value as ArenaViewMode)}
+                data={viewModeOptions}
+              />
+              <Group gap={6} align="center">
+                <Text size="sm">Zoom</Text>
+                <Group gap={4} align="center">
+                  <ActionIcon
+                    variant="light"
+                    aria-label="Zoom out"
+                    onClick={() => updateZoom(-ZOOM_STEP)}
+                    disabled={zoom <= MIN_ZOOM}
+                  >
+                    <IconZoomOut size={16} />
+                  </ActionIcon>
+                  <ActionIcon
+                    variant="light"
+                    aria-label="Reset zoom"
+                    onClick={resetZoom}
+                    disabled={zoom === 1}
+                  >
+                    <IconZoomReset size={16} />
+                  </ActionIcon>
+                  <ActionIcon
+                    variant="light"
+                    aria-label="Zoom in"
+                    onClick={() => updateZoom(ZOOM_STEP)}
+                    disabled={zoom >= MAX_ZOOM}
+                  >
+                    <IconZoomIn size={16} />
+                  </ActionIcon>
+                </Group>
+                <Text size="sm" c="dimmed">{Math.round(zoom * 100)}%</Text>
                 <ActionIcon
                   variant="light"
-                  aria-label="Zoom out"
-                  onClick={() => updateZoom(-ZOOM_STEP)}
-                  disabled={zoom <= MIN_ZOOM}
+                  aria-label="Enter fullscreen"
+                  onClick={toggleFullscreen}
                 >
-                  <IconZoomOut size={16} />
-                </ActionIcon>
-                <ActionIcon
-                  variant="light"
-                  aria-label="Reset zoom"
-                  onClick={resetZoom}
-                  disabled={zoom === 1}
-                >
-                  <IconZoomReset size={16} />
-                </ActionIcon>
-                <ActionIcon
-                  variant="light"
-                  aria-label="Zoom in"
-                  onClick={() => updateZoom(ZOOM_STEP)}
-                  disabled={zoom >= MAX_ZOOM}
-                >
-                  <IconZoomIn size={16} />
+                  <IconArrowsMaximize size={16} />
                 </ActionIcon>
               </Group>
-              <Text size="sm" c="dimmed">{Math.round(zoom * 100)}%</Text>
+              <Group gap="xs">
+                <FileButton onChange={handleImportLayouts} accept="application/json">
+                  {(fileProps) => (
+                    <Button
+                      {...fileProps}
+                      variant="light"
+                      leftSection={<IconUpload size={16} />}
+                    >
+                      Import JSON
+                    </Button>
+                  )}
+                </FileButton>
+                <Button
+                  variant="light"
+                  color="red"
+                  leftSection={<IconTrash size={16} />}
+                  onClick={handleClearLayouts}
+                  disabled={!layouts.length}
+                >
+                  Clear Layouts
+                </Button>
+              </Group>
             </Group>
-            <Group gap="xs">
-              <FileButton onChange={handleImportLayouts} accept="application/json">
-                {(fileProps) => (
-                  <Button
-                    {...fileProps}
-                    variant="light"
-                    leftSection={<IconUpload size={16} />}
-                  >
-                    Import JSON
-                  </Button>
-                )}
-              </FileButton>
-              <Button
-                variant="light"
-                color="red"
-                leftSection={<IconTrash size={16} />}
-                onClick={handleClearLayouts}
-                disabled={!layouts.length}
-              >
-                Clear Layouts
-              </Button>
-            </Group>
+            {renderLegend()}
           </Group>
-          {renderLegend()}
-        </Group>
-        {layout?.description && (
+        )}
+        {layout?.description && !isFullscreen && (
           <Alert color="blue" variant="light" title={layout.name} icon={<IconInfoCircle size={16} />}>
             <Text size="sm">{layout.description}</Text>
           </Alert>
         )}
-        <ScrollArea h="65vh" type="scroll">
-          <Stack gap="lg" pr="md">
+        <ScrollArea h={isFullscreen ? 'calc(100vh - 64px)' : '65vh'} type="scroll">
+          <Stack gap="lg" pr={isFullscreen ? 0 : 'md'} style={{ minHeight: isFullscreen ? '100vh' : undefined }}>
             {renderSection()}
           </Stack>
         </ScrollArea>
-        {layout && unmatchedMonitors.length > 0 && (
+        {layout && unmatchedMonitors.length > 0 && !isFullscreen && (
           <Alert icon={<IconAlertTriangle size={16} />} color="red" variant="light" title="Unmatched Machines">
             <Text size="sm">
               The following machines do not map to the current layout: {unmatchedMonitors.map((m) => m.name ?? m.hostname ?? m._id).join(', ')}

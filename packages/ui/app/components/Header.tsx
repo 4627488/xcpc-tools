@@ -4,7 +4,7 @@ import {
   Tabs, Text, Title,
 } from '@mantine/core';
 import {
-  IconBalloonFilled, IconDeviceHeartMonitor, IconHome, IconPrinter, IconTerminal2,
+  IconBalloonFilled, IconDeviceHeartMonitor, IconHome, IconPrinter, IconTerminal2, IconMap,
 } from '@tabler/icons-react';
 import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -17,6 +17,7 @@ const mainLinks = [
   { link: '/balloon', label: 'Balloon', icon: <IconBalloonFilled style={iconStyle} /> },
   { link: '/monitor', label: 'Monitor', icon: <IconDeviceHeartMonitor style={iconStyle} /> },
   { link: '/commands', label: 'Commands', icon: <IconTerminal2 style={iconStyle} /> },
+  { link: '/arena-editor', label: 'Arena Editor', icon: <IconMap style={iconStyle} /> },
 ];
 
 export function Header() {
