@@ -44,74 +44,76 @@ function toUtf8(code: Buffer) {
     return iconv.decode(code, info).toString();
 }
 
+function escapeText(s: string) {
+    let res = '';
+    for (const c of Array.from(s)) {
+        res += /^[\p{L}\p{M}\p{N}\p{P}\p{S}\r\n\t ]$/u.test(c)
+            ? c
+            : (c.length === 1 && c.codePointAt(0) <= 0x7F)
+                ? c.charCodeAt(0).toString(16).padStart(2, '0')
+                : `U+${c.codePointAt(0).toString(16).toUpperCase()}`;
+    }
+    return res;
+}
+
 export async function ConvertCodeToPDF(code: Buffer, lang, filename, team, location, codeColor = false) {
     compiler ||= await createTypstCompiler();
     const fakeFilename = randomstring(8); // cubercsl: do not trust filename from user
     const typst = generateTypst(team, location, fakeFilename, filename, lang, codeColor);
     compiler.addSource('/main.typst', typst);
-    compiler.addSource(`/${fakeFilename}`, toUtf8(code));
-    const docs = await compiler.compile({
-        format: 'pdf',
-        mainFilePath: '/main.typst',
-    });
-    compiler.addSource(`/${fakeFilename}`, '');
+    compiler.addSource(`/${fakeFilename}`, escapeText(toUtf8(code)));
     logger.info(`Convert ${filename} to PDF`);
-    return docs;
+    try {
+        return await compiler.compile({
+            format: 'pdf',
+            mainFilePath: '/main.typst',
+        });
+    } catch (e) {
+        logger.error(e);
+        compiler = await createTypstCompiler();
+        throw e;
+    } finally {
+        compiler.addSource(`/${fakeFilename}`, '');
+    }
 }
 
 export async function printFile(docs) {
-    try {
-        let finalFile = null;
-        const files = [];
-        for (const doc of docs) {
-            const {
-                _id, tid, code, lang, filename, team, location,
-            } = doc;
-            const pdf = await ConvertCodeToPDF(
-                code ? Buffer.from(code, 'base64') : Buffer.from('empty file'),
-                lang,
-                filename,
-                team,
-                location,
-                config.printColor,
-            );
-            fs.writeFileSync(path.resolve(process.cwd(), `data${path.sep}${tid}#${_id}.pdf`), pdf);
-            files.push(path.resolve(process.cwd(), `data${path.sep}${tid}#${_id}.pdf`));
-        }
-        if (files.length === 1) {
-            finalFile = files[0];
-        } else {
-            finalFile = path.resolve(process.cwd(), `data${path.sep}${new Date().getTime()}-merged.pdf`);
-            await mergePDFs(files, finalFile);
-        }
-        if (config.printers.length) {
-            while (true) {
-                const printersInfo: any[] = await getPrinters();
-                const printers = printersInfo.filter((p) => config.printers.includes(p.printer));
-                const randomP = printers[Math.floor(Math.random() * printers.length)];
-                if (randomP.status === 'idle') {
-                    logger.info(`Printing ${finalFile} on ${randomP.printer}`);
-                    await print(finalFile, randomP.printer, 1, files.length > 1 ? undefined : config.printPageMax);
-                    return randomP.printer;
-                }
-                for (const printer of printers.filter((p) => p.printer !== randomP.printer)) {
-                    logger.info(`Checking ${printer.printer} ${printer.status}`);
-                    if (printer.status === 'idle') {
-                        logger.info(`Printing ${finalFile} on ${printer.printer}`);
-                        await print(finalFile, printer.printer, 1, files.length > 1 ? undefined : config.printPageMax);
-                        return printer.printer;
-                    }
-                }
-                logger.info('No Printer can found to print, sleeping...');
-                await sleep(3000);
-            }
-        }
-        logger.error('No Printer Configured');
-        return null;
-    } catch (e) {
-        logger.error(e);
-        return null;
+    let finalFile = null;
+    const files = [];
+    for (const doc of docs) {
+        const {
+            _id, tid, code, lang, filename, team, location,
+        } = doc;
+        const pdf = await ConvertCodeToPDF(
+            code ? Buffer.from(code, 'base64') : Buffer.from('empty file'),
+            lang,
+            filename,
+            team,
+            location,
+            config.printColor,
+        );
+        fs.writeFileSync(path.resolve(process.cwd(), `data${path.sep}${tid}#${_id}.pdf`), pdf);
+        files.push(path.resolve(process.cwd(), `data${path.sep}${tid}#${_id}.pdf`));
     }
+    if (files.length === 1) {
+        finalFile = files[0];
+    } else {
+        finalFile = path.resolve(process.cwd(), `data${path.sep}${new Date().getTime()}-merged.pdf`);
+        await mergePDFs(files, finalFile);
+    }
+    while (config.printers.length) {
+        const printersInfo: any[] = await getPrinters();
+        const printers = printersInfo.filter((p) => config.printers.includes(p.printer) && p.status === 'idle');
+        if (printers.length) {
+            const randomP = printers[Math.floor(Math.random() * printers.length)];
+            logger.info(`Printing ${finalFile} on ${randomP.printer}`);
+            await print(finalFile, randomP.printer, 1, files.length > 1 ? undefined : config.printPageMax);
+            return randomP.printer;
+        }
+        logger.info('No idle printer can found to print, sleeping...');
+        await sleep(3000);
+    }
+    throw new Error('No Printer Configured');
 }
 
 async function fetchTask(c) {

@@ -3,7 +3,7 @@ import EscPosEncoder from '@freedom_sky/esc-pos-encoder';
 import superagent from 'superagent';
 import { config } from '../config';
 import {
-    checkReceiptStatus, getBalloonName, Logger, receiptPrint, sleep,
+    getBalloonName, Logger, receiptPrint, sleep,
 } from '../utils';
 
 const post = (url: string) => superagent.post(new URL(url, config.server).toString()).set('Accept', 'application/json');
@@ -56,8 +56,11 @@ export const receiptBalloonText = (
         .replace(/%TEAM/g, i18n[lang].team)
         .replace(/%STATUS/g, i18n[lang].status)
         .replace(/%RECEIPT/g, i18n[lang].receipt);
-    for (const line of config.balloonTemplate.split('\n')) {
-        if (!line.startsWith('#')) enc = enc.line(replace(line));
+    for (const line of config.balloonTemplate.replace(/\r/g, '').split('\n')) {
+        if (!line.startsWith('#')) {
+            enc = enc.line(replace(line));
+            continue;
+        }
         const [command, ...rawArgs] = line.slice(1).split(' ');
         const args = rawArgs.map((arg) => (arg === 'true' ? true : arg === 'false' ? false : Number.isSafeInteger(arg) ? +arg : replace(arg)));
         if (whitelist.includes(command)) enc = enc[command](...args);
@@ -83,7 +86,7 @@ ${i18n[lang].comment}: ${comment}
 `;
 
 let timer = null;
-let printer = null;
+let printer: string = null;
 
 async function printBalloon(doc, lang) {
     let status = '';
@@ -95,13 +98,12 @@ async function printBalloon(doc, lang) {
         doc.balloonid,
         doc.location ? doc.location : 'N/A',
         doc.problem,
-        getBalloonName(doc.contestproblem.rgb, lang),
+        doc.contestproblem.color || getBalloonName(doc.contestproblem.rgb, lang),
         doc.awards ? doc.awards : 'N/A',
         doc.team,
         status,
         lang,
     );
-    printer = await checkReceiptStatus(printer);
     await receiptPrint(printer, bReceipt, config.balloonCommand);
 }
 
@@ -129,7 +131,7 @@ async function fetchTask(c) {
 }
 
 export async function apply() {
-    printer = { printer: config.balloon };
+    printer = config.balloon;
     if (config.token && config.server && config.balloon) await fetchTask(config);
     else logger.error('Config not found, please check the config.yaml');
 }
