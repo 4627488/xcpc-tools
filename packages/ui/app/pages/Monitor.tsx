@@ -18,10 +18,10 @@ export default function Monitor() {
   const query = useQuery({
     queryKey: ['monitor'],
     queryFn: () => fetch('/monitor').then((res) => res.json()),
-    refetchInterval: 30000,
+    refetchInterval: 3000,
   });
 
-  const load = query.isLoading || query.isFetching || query.isRefetching;
+  const load = query.isLoading;
 
   const openMonitorInfo = React.useCallback((monitor, tab) => {
     setDetailM(monitor);

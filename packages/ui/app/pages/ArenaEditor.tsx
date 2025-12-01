@@ -13,6 +13,7 @@ import {
 import { notifications } from '@mantine/notifications';
 import {
   IconDeviceFloppy,
+  IconDownload,
   IconRotateClockwise,
   IconZoomIn,
   IconZoomOut,
@@ -208,6 +209,38 @@ export default function ArenaEditor() {
     notifications.show({ title: 'Saved', message: 'Layout positions saved to local storage', color: 'green' });
   };
 
+  const downloadLayout = () => {
+    if (!layout) {
+      notifications.show({ title: 'No layout', message: '请选择一个布局再下载', color: 'yellow' });
+      return;
+    }
+    const updatedLayout = {
+      ...layout,
+      sections: layout.sections.map((section) => ({
+        ...section,
+        meta: {
+          ...section.meta,
+          x: sectionStates[section.id]?.x ?? 0,
+          y: sectionStates[section.id]?.y ?? 0,
+          rotation: sectionStates[section.id]?.rotation ?? 0,
+        },
+      })),
+    };
+
+    const data = JSON.stringify(updatedLayout, null, 2);
+    const blob = new Blob([data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const baseName = (updatedLayout.name || updatedLayout.id || 'arena-layout').replace(/\s+/g, '_');
+    a.href = url;
+    a.download = `${baseName}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    notifications.show({ title: 'Downloaded', message: '布局 JSON 已下载', color: 'green' });
+  };
+
   const renderSection = (section: ArenaLayoutSectionDocument) => {
     const state = sectionStates[section.id];
     if (!state) return null;
@@ -335,6 +368,9 @@ export default function ArenaEditor() {
           </Group>
           <Button leftSection={<IconDeviceFloppy size={16} />} onClick={saveLayout}>
             Save
+          </Button>
+          <Button variant="light" leftSection={<IconDownload size={16} />} onClick={downloadLayout}>
+            Download JSON
           </Button>
           <Text size="xs" c="dimmed">
             拖动时按 R 旋转 (Shift+R 反向)
